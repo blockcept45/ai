@@ -1,0 +1,16 @@
+{
+  "questions": [
+    {
+      "question": "What is React?",
+      "answer": "A JavaScript library for building UI"
+    },
+    {
+      "question": "What is JSON?",
+      "answer": "JavaScript Object Notation"
+    },
+    {
+      "question": "What is useState?",
+      "answer": "A React hook for state management"
+    }
+  ]
+}
