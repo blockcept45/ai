@@ -6,11 +6,12 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [voiceText, setVoiceText] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [started, setStarted] = useState(false);
 
   const recognitionRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // 🎤 INIT SPEECH
+  // 🎤 INIT SPEECH RECOGNITION
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -21,78 +22,105 @@ function App() {
 
     const rec = new SR();
     rec.lang = "en-IN";
-    rec.interimResults = true;
+    rec.continuous = false;
+    rec.interimResults = false;
 
-    recognitionRef.current = rec;
-  }, []);
-
-  // 🌐 FETCH API
-  useEffect(() => {
-    fetch("https://raw.githubusercontent.com/blockcept45/ai-hr/refs/heads/main/main1.json")
-      .then((res) => res.json())
-      .then((data) => {
-        setQaData(data);
-
-        if (data.length > 0) {
-          const msg = "Hi 👋 First question: " + data[0].question;
-          setMessages([{ text: msg, sender: "bot" }]);
-          speak(msg);
-        }
-      })
-      .catch(() => alert("API load failed"));
-  }, []);
-
-  // 🔊 SPEAK
-  const speak = (text) => {
-    const u = new SpeechSynthesisUtterance(text);
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
-  };
-
-  // 🧠 SCORE FUNCTION (KEYWORD BASED)
-  const getScore = (keywords, user) => {
-    if (!keywords || !Array.isArray(keywords)) return 0;
-
-    const clean = (str) =>
-      str.toLowerCase().replace(/[^\w\s]/g, "");
-
-    const userWords = clean(user).split(" ");
-
-    let matchCount = 0;
-
-    keywords.forEach((word) => {
-      if (userWords.includes(word.toLowerCase())) {
-        matchCount++;
-      }
-    });
-
-    return Math.round((matchCount / keywords.length) * 100);
-  };
-
-  // 🎤 START LISTEN
-  const startListening = () => {
-    const rec = recognitionRef.current;
-    if (!rec) return;
-
-    setIsListening(true);
-    setVoiceText("🎤 Listening...");
-
-    rec.start();
-
-    rec.onresult = (e) => {
-      let text = "";
-      for (let i = 0; i < e.results.length; i++) {
-        text += e.results[i][0].transcript;
-      }
+    rec.onresult = (event) => {
+      const text = event.results[0][0].transcript;
       setVoiceText(text);
     };
 
     rec.onend = () => setIsListening(false);
 
-    rec.onerror = () => {
+    rec.onerror = (e) => {
+      console.log("Mic error:", e);
       setIsListening(false);
-      setVoiceText("❌ Try again");
     };
+
+    recognitionRef.current = rec;
+  }, []);
+
+  // 🌐 LOAD QUESTIONS
+  useEffect(() => {
+    fetch(
+      "https://raw.githubusercontent.com/blockcept45/ai-hr/refs/heads/main/main1.json"
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        setQaData(data);
+
+        const msg = "Hi 👋 " + data[0].question;
+        setMessages([{ text: msg, sender: "bot" }]);
+      })
+      .catch(() => alert("API load failed"));
+  }, []);
+
+  // 🔊 SPEAK FUNCTION (FIXED)
+  const speak = (text) => {
+    if (!window.speechSynthesis) return;
+
+    window.speechSynthesis.cancel();
+
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "en-IN";
+
+    u.onerror = (e) => console.log("Speech error:", e);
+
+    window.speechSynthesis.speak(u);
+  };
+
+  // ▶ START INTERVIEW (IMPORTANT FIX)
+  const startInterview = () => {
+    if (qaData.length === 0) return;
+
+    setStarted(true);
+
+    const firstMsg = "Hi 👋 " + qaData[0].question;
+
+    // 🔓 unlock audio
+    const unlock = new SpeechSynthesisUtterance("");
+    window.speechSynthesis.speak(unlock);
+
+    setTimeout(() => {
+      speak(firstMsg);
+    }, 200);
+  };
+
+  // 🎤 START MIC
+  const startListening = () => {
+    if (!started) {
+      alert("Click Start Interview first");
+      return;
+    }
+
+    const rec = recognitionRef.current;
+    if (!rec) return;
+
+    try {
+      setVoiceText("");
+      setIsListening(true);
+
+      setTimeout(() => {
+        rec.start();
+      }, 200);
+    } catch (err) {
+      console.log(err);
+      setIsListening(false);
+    }
+  };
+
+  // 🧠 SCORE
+  const getScore = (keywords, user) => {
+    if (!keywords) return 0;
+
+    const words = user.toLowerCase().split(" ");
+    let match = 0;
+
+    keywords.forEach((k) => {
+      if (words.includes(k.toLowerCase())) match++;
+    });
+
+    return Math.round((match / keywords.length) * 100);
   };
 
   // ✅ SUBMIT ANSWER
@@ -101,36 +129,33 @@ function App() {
 
     const current = qaData[index];
 
-    let newMessages = [...messages, { text: voiceText, sender: "user" }];
+    let newMessages = [
+      ...messages,
+      { text: voiceText, sender: "user" }
+    ];
 
-    const percent = getScore(current.keywords, voiceText);
+    const score = getScore(current.keywords, voiceText);
 
     let feedback = "";
+    if (score >= 80) feedback = "🔥 Excellent";
+    else if (score >= 50) feedback = "👍 Good";
+    else if (score >= 20) feedback = "🙂 Partial";
+    else feedback = "❌ Weak";
 
-    if (percent >= 80) {
-      feedback = "🔥 Excellent!";
-      speak("Excellent answer");
-    } else if (percent >= 50) {
-      feedback = "👍 Good answer";
-      speak("Good answer");
-    } else if (percent >= 20) {
-      feedback = "🙂 Partial answer";
-      speak("Partial answer");
-    } else {
-      feedback = "❌ Weak answer";
-      speak("Weak answer");
-    }
+    const resultMsg = `Score: ${score}% → ${feedback}`;
 
-    newMessages.push({
-      text: `Score: ${percent}% → ${feedback}`,
-      sender: "bot"
-    });
+    newMessages.push({ text: resultMsg, sender: "bot" });
+    speak(resultMsg);
 
     // NEXT QUESTION
     if (index < qaData.length - 1) {
       const nextQ = qaData[index + 1].question;
+
+      setTimeout(() => {
+        speak(nextQ);
+      }, 800);
+
       newMessages.push({ text: nextQ, sender: "bot" });
-      speak("Next question. " + nextQ);
       setIndex(index + 1);
     } else {
       const finalMsg = "🎉 Interview Finished";
@@ -147,59 +172,53 @@ function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 💬 CHAT UI
-  const ChatMessage = ({ text, sender }) => (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: sender === "user" ? "flex-end" : "flex-start",
-        margin: "10px"
-      }}
-    >
-      <div
-        style={{
-          background: sender === "user" ? "#2563eb" : "#1e293b",
-          color: "#fff",
-          padding: "10px",
-          borderRadius: "10px",
-          maxWidth: "70%"
-        }}
-      >
-        {text}
-      </div>
-    </div>
-  );
-
   return (
-    <div style={styles.container}>
-      <h2 style={styles.header}>🤖 AI Voice Interview</h2>
+    <div className="app-container d-flex flex-column">
+
+      {/* HEADER */}
+      <div className="app-header">
+        <h5>🤖 AI Voice Interview</h5>
+      </div>
+
+      {/* START BUTTON */}
+      {!started && (
+        <div className="text-center p-3">
+          <button className="btn btn-success" onClick={startInterview}>
+            ▶ Start Interview
+          </button>
+        </div>
+      )}
 
       {/* CHAT */}
-      <div style={styles.chat}>
+      <div className="chat-container">
         {messages.map((m, i) => (
-          <ChatMessage key={i} text={m.text} sender={m.sender} />
+          <div key={i} className={`chat-bubble ${m.sender}`}>
+            {m.text}
+          </div>
         ))}
         <div ref={chatEndRef}></div>
       </div>
 
-      {/* VOICE UI */}
-      <div style={styles.bottom}>
-        <div style={styles.voiceBox}>
-          {voiceText || "🎤 Tap mic and speak..."}
+      {/* BOTTOM */}
+      <div className="bottom-bar">
+        <div className="voice-preview">
+          {voiceText || "🎤 Speak your answer..."}
         </div>
 
-        <div style={styles.controls}>
+        <div className="d-flex justify-content-between mt-2">
           <button
             onClick={startListening}
-            style={{
-              ...styles.mic,
-              ...(isListening ? styles.micActive : {})
-            }}
+            disabled={!started}
+            className={`mic-btn ${isListening ? "listening" : ""}`}
           >
             🎤
           </button>
 
-          <button onClick={submitAnswer} style={styles.submit}>
+          <button
+            onClick={submitAnswer}
+            disabled={!started}
+            className="submit-btn"
+          >
             ✅
           </button>
         </div>
@@ -207,50 +226,5 @@ function App() {
     </div>
   );
 }
-
-// 🎨 STYLE
-const styles = {
-  container: {
-    maxWidth: "500px",
-    margin: "auto",
-    height: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    background: "#0f172a",
-    color: "#fff"
-  },
-  header: { textAlign: "center", padding: "15px" },
-  chat: { flex: 1, overflowY: "auto" },
-  bottom: { padding: "10px", borderTop: "1px solid #333" },
-  voiceBox: {
-    background: "#1e293b",
-    padding: "10px",
-    borderRadius: "10px",
-    marginBottom: "10px"
-  },
-  controls: { display: "flex", justifyContent: "space-between" },
-  mic: {
-    width: "60px",
-    height: "60px",
-    borderRadius: "50%",
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    fontSize: "20px"
-  },
-  micActive: {
-    background: "#ef4444",
-    animation: "pulse 1s infinite"
-  },
-  submit: {
-    width: "60px",
-    height: "60px",
-    borderRadius: "50%",
-    background: "#22c55e",
-    color: "#fff",
-    border: "none",
-    fontSize: "20px"
-  }
-};
 
 export default App;

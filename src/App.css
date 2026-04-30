@@ -1,5 +1,86 @@
+body {
+  margin: 0;
+  background: #0f172a;
+  font-family: sans-serif;
+}
+
+.app-container {
+  height: 100vh;
+  max-width: 480px;
+  margin: auto;
+  color: white;
+}
+
+/* HEADER */
+.app-header {
+  background: #2563eb;
+  padding: 15px;
+  text-align: center;
+}
+
+/* CHAT */
+.chat-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.chat-bubble {
+  padding: 10px;
+  margin: 5px;
+  border-radius: 10px;
+  max-width: 70%;
+}
+
+.chat-bubble.bot {
+  background: #1e293b;
+}
+
+.chat-bubble.user {
+  background: #2563eb;
+  margin-left: auto;
+}
+
+/* BOTTOM */
+.bottom-bar {
+  padding: 10px;
+  background: #020617;
+}
+
+.voice-preview {
+  background: #1e293b;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+/* BUTTONS */
+.mic-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: none;
+  color: white;
+  font-size: 20px;
+}
+
+.submit-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: none;
+  color: white;
+  font-size: 20px;
+}
+
+.mic-btn.listening {
+  background: red;
+  animation: pulse 1s infinite;
+}
+
 @keyframes pulse {
   0% { transform: scale(1); }
-  70% { transform: scale(1.2); }
+  50% { transform: scale(1.1); }
   100% { transform: scale(1); }
 }
