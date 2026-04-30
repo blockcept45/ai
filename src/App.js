@@ -32,58 +32,52 @@ function App() {
 
     rec.onend = () => setIsListening(false);
 
-    rec.onerror = (e) => {
-      console.log("Mic error:", e);
-      setIsListening(false);
-    };
+    rec.onerror = () => setIsListening(false);
 
     recognitionRef.current = rec;
   }, []);
 
-  // 🌐 LOAD QUESTIONS
+  // 🌐 FETCH API (QUESTION + ANSWER)
   useEffect(() => {
-    fetch(
-      "https://raw.githubusercontent.com/blockcept45/ai-hr/refs/heads/main/main1.json"
-    )
+    fetch("https://raw.githubusercontent.com/blockcept45/ai-hr/refs/heads/main/main1.json")
       .then((res) => res.json())
       .then((data) => {
         setQaData(data);
 
-        const msg = "Hi 👋 " + data[0].question;
-        setMessages([{ text: msg, sender: "bot" }]);
+        const firstQ = "Hi 👋 " + data[0].question;
+        setMessages([{ text: firstQ, sender: "bot" }]);
       })
       .catch(() => alert("API load failed"));
   }, []);
 
-  // 🔊 SPEAK FUNCTION (FIXED)
-  const speak = (text) => {
+  // 🔊 SPEECH QUEUE (NO CUTTING)
+  const speakQueue = (texts) => {
     if (!window.speechSynthesis) return;
 
     window.speechSynthesis.cancel();
 
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "en-IN";
+    texts.forEach((text, i) => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "en-IN";
 
-    u.onerror = (e) => console.log("Speech error:", e);
-
-    window.speechSynthesis.speak(u);
+      setTimeout(() => {
+        window.speechSynthesis.speak(u);
+      }, i * 2200); // delay per sentence
+    });
   };
 
-  // ▶ START INTERVIEW (IMPORTANT FIX)
+  // ▶ START INTERVIEW
   const startInterview = () => {
     if (qaData.length === 0) return;
 
     setStarted(true);
 
-    const firstMsg = "Hi 👋 " + qaData[0].question;
-
-    // 🔓 unlock audio
     const unlock = new SpeechSynthesisUtterance("");
     window.speechSynthesis.speak(unlock);
 
     setTimeout(() => {
-      speak(firstMsg);
-    }, 200);
+      speakQueue(["Hi", qaData[0].question]);
+    }, 300);
   };
 
   // 🎤 START MIC
@@ -96,20 +90,13 @@ function App() {
     const rec = recognitionRef.current;
     if (!rec) return;
 
-    try {
-      setVoiceText("");
-      setIsListening(true);
+    setVoiceText("");
+    setIsListening(true);
 
-      setTimeout(() => {
-        rec.start();
-      }, 200);
-    } catch (err) {
-      console.log(err);
-      setIsListening(false);
-    }
+    setTimeout(() => rec.start(), 200);
   };
 
-  // 🧠 SCORE
+  // 🧠 SCORE FUNCTION
   const getScore = (keywords, user) => {
     if (!keywords) return 0;
 
@@ -128,6 +115,7 @@ function App() {
     if (!voiceText.trim() || qaData.length === 0) return;
 
     const current = qaData[index];
+    const correctAnswer = current.answer || "Good answer.";
 
     let newMessages = [
       ...messages,
@@ -137,33 +125,55 @@ function App() {
     const score = getScore(current.keywords, voiceText);
 
     let feedback = "";
-    if (score >= 80) feedback = "🔥 Excellent";
-    else if (score >= 50) feedback = "👍 Good";
-    else if (score >= 20) feedback = "🙂 Partial";
-    else feedback = "❌ Weak";
+    if (score >= 80) feedback = "Excellent";
+    else if (score >= 50) feedback = "Good";
+    else if (score >= 20) feedback = "Partial";
+    else feedback = "Weak";
 
     const resultMsg = `Score: ${score}% → ${feedback}`;
 
+    // SHOW IN CHAT
     newMessages.push({ text: resultMsg, sender: "bot" });
-    speak(resultMsg);
+    newMessages.push({
+      text: "💡 Sample Answer: " + correctAnswer,
+      sender: "bot"
+    });
 
-    // NEXT QUESTION
+    setMessages(newMessages);
+
+    // 🔊 SPEAK ALL
+    speakQueue([
+      "You said",
+      voiceText,
+      resultMsg,
+      "Here is a better answer",
+      correctAnswer
+    ]);
+
+    // ⏭ NEXT QUESTION
     if (index < qaData.length - 1) {
       const nextQ = qaData[index + 1].question;
 
       setTimeout(() => {
-        speak(nextQ);
-      }, 800);
+        setMessages((prev) => [
+          ...prev,
+          { text: nextQ, sender: "bot" }
+        ]);
+        speakQueue([nextQ]);
+      }, 7000);
 
-      newMessages.push({ text: nextQ, sender: "bot" });
       setIndex(index + 1);
     } else {
-      const finalMsg = "🎉 Interview Finished";
-      newMessages.push({ text: finalMsg, sender: "bot" });
-      speak(finalMsg);
+      setTimeout(() => {
+        const finalMsg = "🎉 Interview Finished";
+        setMessages((prev) => [
+          ...prev,
+          { text: finalMsg, sender: "bot" }
+        ]);
+        speakQueue([finalMsg]);
+      }, 7000);
     }
 
-    setMessages(newMessages);
     setVoiceText("");
   };
 
@@ -180,7 +190,7 @@ function App() {
         <h5>🤖 AI Voice Interview</h5>
       </div>
 
-      {/* START BUTTON */}
+      {/* START */}
       {!started && (
         <div className="text-center p-3">
           <button className="btn btn-success" onClick={startInterview}>
