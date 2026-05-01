@@ -8,10 +8,13 @@ function App() {
   const [isListening, setIsListening] = useState(false);
   const [started, setStarted] = useState(false);
 
+  const [waitingChoice, setWaitingChoice] = useState(false);
+  const [lastAnswer, setLastAnswer] = useState(null);
+
   const recognitionRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // 🎤 INIT SPEECH RECOGNITION
+  // 🎤 SPEECH RECOGNITION
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -31,26 +34,23 @@ function App() {
     };
 
     rec.onend = () => setIsListening(false);
-
     rec.onerror = () => setIsListening(false);
 
     recognitionRef.current = rec;
   }, []);
 
-  // 🌐 FETCH API (QUESTION + ANSWER)
+  // 🌐 FETCH QUESTIONS
   useEffect(() => {
     fetch("https://raw.githubusercontent.com/blockcept45/ai-hr/refs/heads/main/main1.json")
       .then((res) => res.json())
       .then((data) => {
         setQaData(data);
-
-        const firstQ = "Hi 👋 " + data[0].question;
-        setMessages([{ text: firstQ, sender: "bot" }]);
+        setMessages([{ text: "Hi 👋 " + data[0].question, sender: "bot" }]);
       })
       .catch(() => alert("API load failed"));
   }, []);
 
-  // 🔊 SPEECH QUEUE (NO CUTTING)
+  // 🔊 SPEAK
   const speakQueue = (texts) => {
     if (!window.speechSynthesis) return;
 
@@ -62,11 +62,11 @@ function App() {
 
       setTimeout(() => {
         window.speechSynthesis.speak(u);
-      }, i * 2200); // delay per sentence
+      }, i * 2000);
     });
   };
 
-  // ▶ START INTERVIEW
+  // ▶ START
   const startInterview = () => {
     if (qaData.length === 0) return;
 
@@ -80,10 +80,10 @@ function App() {
     }, 300);
   };
 
-  // 🎤 START MIC
+  // 🎤 MIC
   const startListening = () => {
-    if (!started) {
-      alert("Click Start Interview first");
+    if (!started || waitingChoice) {
+      alert("Finish current step first");
       return;
     }
 
@@ -96,61 +96,105 @@ function App() {
     setTimeout(() => rec.start(), 200);
   };
 
-  // 🧠 SCORE FUNCTION
+  // 🧠 CUSTOM SCORE LOGIC
   const getScore = (keywords, user) => {
-    if (!keywords) return 0;
+    if (!keywords || keywords.length === 0) return 0;
 
-    const words = user.toLowerCase().split(" ");
+    const words = user.toLowerCase().split(/\s+/);
+
     let match = 0;
 
     keywords.forEach((k) => {
-      if (words.includes(k.toLowerCase())) match++;
+      if (words.some(w => w.includes(k.toLowerCase()))) {
+        match++;
+      }
     });
 
-    return Math.round((match / keywords.length) * 100);
+    // ❌ NO MATCH
+    if (match === 0) return 0;
+
+    // 🔥 HIGH MATCH (6+)
+    if (match >= 6) {
+      const high = [70, 80, 90];
+      return high[Math.floor(Math.random() * high.length)];
+    }
+
+    // 👍 MEDIUM MATCH (3–5)
+    if (match >= 3) {
+      return Math.floor(Math.random() * 20) + 50; // 50–69
+    }
+
+    // 🙂 LOW MATCH (1–2)
+    return Math.floor(Math.random() * 20) + 40; // 40–59
   };
 
-  // ✅ SUBMIT ANSWER
+  // ✅ SUBMIT
   const submitAnswer = () => {
     if (!voiceText.trim() || qaData.length === 0) return;
 
     const current = qaData[index];
     const correctAnswer = current.answer || "Good answer.";
 
-    let newMessages = [
-      ...messages,
-      { text: voiceText, sender: "user" }
-    ];
-
     const score = getScore(current.keywords, voiceText);
 
     let feedback = "";
     if (score >= 80) feedback = "Excellent";
-    else if (score >= 50) feedback = "Good";
-    else if (score >= 20) feedback = "Partial";
-    else feedback = "Weak";
+    else if (score >= 60) feedback = "Good";
+    else if (score >= 40) feedback = "Average";
+    else if (score > 0) feedback = "Weak";
+    else feedback = "Very Poor";
 
     const resultMsg = `Score: ${score}% → ${feedback}`;
 
-    // SHOW IN CHAT
-    newMessages.push({ text: resultMsg, sender: "bot" });
-    newMessages.push({
-      text: "💡 Sample Answer: " + correctAnswer,
-      sender: "bot"
+    setMessages((prev) => [
+      ...prev,
+      { text: voiceText, sender: "user" },
+      { text: resultMsg, sender: "bot" },
+      { text: "Can I explain how you can answer better?", sender: "bot" }
+    ]);
+
+    setLastAnswer({
+      user: voiceText,
+      correct: correctAnswer
     });
 
-    setMessages(newMessages);
+    setWaitingChoice(true);
 
-    // 🔊 SPEAK ALL
     speakQueue([
       "You said",
       voiceText,
       resultMsg,
-      "Here is a better answer",
-      correctAnswer
+      "Can I explain how you can answer better?"
     ]);
 
-    // ⏭ NEXT QUESTION
+    setVoiceText("");
+  };
+
+  // 👍 YES
+  const handleYes = () => {
+    if (!lastAnswer) return;
+
+    const explainMsg = "💡 Sample Answer: " + lastAnswer.correct;
+
+    setMessages((prev) => [
+      ...prev,
+      { text: explainMsg, sender: "bot" }
+    ]);
+
+    speakQueue(["Here is a better answer", lastAnswer.correct]);
+
+    setWaitingChoice(false);
+    moveNextQuestion();
+  };
+
+  // ❌ NO
+  const handleNo = () => {
+    setWaitingChoice(false);
+    moveNextQuestion();
+  };
+
+  // ⏭ NEXT
+  const moveNextQuestion = () => {
     if (index < qaData.length - 1) {
       const nextQ = qaData[index + 1].question;
 
@@ -160,21 +204,19 @@ function App() {
           { text: nextQ, sender: "bot" }
         ]);
         speakQueue([nextQ]);
-      }, 7000);
+      }, 2000);
 
-      setIndex(index + 1);
+      setIndex((prev) => prev + 1);
     } else {
-      setTimeout(() => {
-        const finalMsg = "🎉 Interview Finished";
-        setMessages((prev) => [
-          ...prev,
-          { text: finalMsg, sender: "bot" }
-        ]);
-        speakQueue([finalMsg]);
-      }, 7000);
-    }
+      const finalMsg = "🎉 Interview Finished";
 
-    setVoiceText("");
+      setMessages((prev) => [
+        ...prev,
+        { text: finalMsg, sender: "bot" }
+      ]);
+
+      speakQueue([finalMsg]);
+    }
   };
 
   // 🔽 AUTO SCROLL
@@ -185,12 +227,10 @@ function App() {
   return (
     <div className="app-container d-flex flex-column">
 
-      {/* HEADER */}
       <div className="app-header">
         <h5>🤖 AI Voice Interview</h5>
       </div>
 
-      {/* START */}
       {!started && (
         <div className="text-center p-3">
           <button className="btn btn-success" onClick={startInterview}>
@@ -199,7 +239,6 @@ function App() {
         </div>
       )}
 
-      {/* CHAT */}
       <div className="chat-container">
         {messages.map((m, i) => (
           <div key={i} className={`chat-bubble ${m.sender}`}>
@@ -209,7 +248,6 @@ function App() {
         <div ref={chatEndRef}></div>
       </div>
 
-      {/* BOTTOM */}
       <div className="bottom-bar">
         <div className="voice-preview">
           {voiceText || "🎤 Speak your answer..."}
@@ -218,7 +256,7 @@ function App() {
         <div className="d-flex justify-content-between mt-2">
           <button
             onClick={startListening}
-            disabled={!started}
+            disabled={!started || waitingChoice}
             className={`mic-btn ${isListening ? "listening" : ""}`}
           >
             🎤
@@ -226,12 +264,23 @@ function App() {
 
           <button
             onClick={submitAnswer}
-            disabled={!started}
+            disabled={!started || waitingChoice}
             className="submit-btn"
           >
             ✅
           </button>
         </div>
+
+        {waitingChoice && (
+          <div className="text-center mt-3">
+            <button className="btn btn-success me-2" onClick={handleYes}>
+              👍 Yes
+            </button>
+            <button className="btn btn-danger" onClick={handleNo}>
+              ❌ No
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
